@@ -147,6 +147,19 @@ textarea { width: 100%; resize: vertical; min-height: 60px; }
 .hist-top strong { font-size: 1rem; }
 .hist-ex { font-size: .9rem; margin: 4px 0; }
 .hist-ex b { font-weight: 600; }
+h3.month { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 18px 0 6px; }
+h3.month:first-child { margin-top: 0; }
+.month + .hist-item { border-top: 0; padding-top: 4px; }
+.hist-row { display: flex; gap: 12px; align-items: flex-start; }
+.hist-main { flex: 1; min-width: 0; }
+.date-badge {
+  flex: none; width: 52px; text-align: center; border-radius: 10px; padding: 4px 0 6px;
+  background: var(--accent-soft); color: var(--accent); line-height: 1.1;
+}
+.date-badge .dow, .date-badge .mon { display: block; font-size: .7rem; font-weight: 600; text-transform: uppercase; }
+.date-badge .day { display: block; font-size: 1.4rem; font-weight: 800; }
+.date-edit { flex-direction: row; align-items: center; gap: 6px; }
+.date-edit input { padding: 5px 8px; font-size: .85rem; }
 details summary { cursor: pointer; list-style: none; }
 details summary::-webkit-details-marker { display: none; }
 

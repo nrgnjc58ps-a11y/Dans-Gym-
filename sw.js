@@ -1,6 +1,6 @@
 // Network-first service worker: always tries for the latest version,
 // falls back to the cached copy when offline (e.g. gym basement with no signal).
-const CACHE = 'dansgym-v2';
+const CACHE = 'dansgym-v3';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'icon.svg', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {

@@ -13,10 +13,10 @@ const DAY = 86400000;
 const DEFAULT_EXERCISES = [
   'Bench Press', 'Incline Bench Press', 'Dumbbell Bench Press', 'Overhead Press',
   'Squat', 'Front Squat', 'Leg Press', 'Romanian Deadlift', 'Deadlift',
-  'Barbell Row', 'Dumbbell Row', 'Pull-up', 'Chin-up', 'Lat Pulldown', 'Seated Cable Row',
+  'Barbell Row', 'Dumbbell Row', 'Lat Pulldown', 'Seated Cable Row', 'T-Bar Row',
   'Lateral Raise', 'Face Pull', 'Bicep Curl', 'Hammer Curl', 'Tricep Pushdown',
-  'Skull Crusher', 'Dip', 'Leg Curl', 'Leg Extension', 'Calf Raise', 'Hip Thrust',
-  'Lunge', 'Plank', 'Hanging Leg Raise', 'Cable Crunch'
+  'Skull Crusher', 'Overhead Tricep Extension', 'Shrug', 'Leg Curl', 'Leg Extension', 'Calf Raise', 'Hip Thrust',
+  'Dumbbell Lunge', 'Goblet Squat', 'Hack Squat', 'Rear Delt Fly', 'Chest Fly', 'Cable Crunch'
 ];
 
 /* ---------------------------------------------------------------- state */
@@ -24,7 +24,7 @@ const DEFAULT_EXERCISES = [
 function defaultState() {
   return {
     version: 1,
-    settings: { unit: 'kg', goalKg: null, weeklyTarget: 4 },
+    settings: { unit: 'kg', goalKg: null },
     weighIns: [],   // { date: 'YYYY-MM-DD', kg: Number, note: String }
     workouts: [],   // { id, date, name, startedAt, finishedAt, notes, exercises: [{ name, sets: [{ kg, reps }] }] }
     draft: null     // in-progress workout: same shape as workout, sets have { kg, reps, done }
@@ -200,6 +200,7 @@ function lastSessionFor(name) {
 function newDraft(fromWorkout) {
   state.draft = {
     id: uid(),
+    date: todayStr(),
     name: fromWorkout ? fromWorkout.name : defaultWorkoutName(),
     startedAt: new Date().toISOString(),
     notes: '',
@@ -227,10 +228,11 @@ function finishDraft() {
   }
   state.workouts.push({
     id: d.id,
-    date: dateStr(new Date(d.startedAt)),
+    date: d.date || dateStr(new Date(d.startedAt)),
     name: d.name.trim() || 'Workout',
     startedAt: d.startedAt,
-    finishedAt: new Date().toISOString(),
+    // A back-dated workout has no meaningful duration
+    finishedAt: !d.date || d.date === dateStr(new Date(d.startedAt)) ? new Date().toISOString() : null,
     notes: d.notes.trim(),
     exercises
   });
@@ -316,8 +318,8 @@ function renderWeekStats() {
 
   $('#weekStats').innerHTML = `
     <div class="stat"><div class="label">This week</div>
-      <div class="value">${thisWeek.length}<span class="muted" style="font-size:1rem"> / ${state.settings.weeklyTarget}</span></div>
-      <div class="sub">workouts</div></div>
+      <div class="value">${thisWeek.length}</div>
+      <div class="sub">${thisWeek.length === 1 ? 'workout' : 'workouts'} since Monday</div></div>
     <div class="stat"><div class="label">Weekly volume</div>
       <div class="value">${num(toDisp(vol), 0)}</div><div class="sub">${unit()} · ${sets} sets</div></div>
     <div class="stat"><div class="label">Last workout</div>
@@ -355,7 +357,10 @@ function renderWorkout() {
   timerInterval = setInterval(tick, 15000);
 
   body.innerHTML = `
-    <label style="margin-bottom:12px">Name<input type="text" id="draftName" value="${esc(d.name)}"></label>
+    <div class="row-form" style="margin-bottom:12px">
+      <label>Date<input type="date" id="draftDate" value="${esc(d.date || todayStr())}" max="${todayStr()}" required></label>
+      <label class="grow">Name<input type="text" id="draftName" value="${esc(d.name)}"></label>
+    </div>
     <div id="exerciseBlocks">
       ${d.exercises.map((ex, i) => exerciseBlock(ex, i)).join('')}
     </div>
@@ -370,6 +375,11 @@ function renderWorkout() {
     </div>`;
 
   $('#draftName').oninput = e => { d.name = e.target.value; save(); };
+  $('#draftDate').onchange = e => {
+    const v = e.target.value;
+    if (!v || v > todayStr()) { e.target.value = d.date || todayStr(); toast('Pick today or an earlier date'); return; }
+    d.date = v; save();
+  };
   $('#draftNotes').oninput = e => { d.notes = e.target.value; save(); };
   $('#addExForm').onsubmit = e => {
     e.preventDefault();
@@ -558,27 +568,48 @@ function renderHistory() {
   const list = sortedWorkouts();
   const el = $('#historyList');
   if (!list.length) { el.innerHTML = '<div class="empty">No workouts yet. Start one from the Today tab.</div>'; return; }
+  let month = '';
   el.innerHTML = list.map(wk => {
     const dur = wk.startedAt && wk.finishedAt ? fmtDuration(new Date(wk.finishedAt) - new Date(wk.startedAt)) : '';
     const bw = weighInOn(wk.date);
-    return `<div class="hist-item">
-      <div class="hist-top">
-        <strong>${esc(wk.name)}</strong>
-        <span class="muted small">${fmtDate(wk.date, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}</span>
-      </div>
-      <div class="muted small">${[dur, `${workoutSets(wk)} sets`, `${num(toDisp(workoutVolume(wk)), 0)} ${unit()} volume`, bw ? `body weight ${wu(bw.kg)}` : ''].filter(Boolean).join(' · ')}</div>
-      <details>
-        <summary class="small" style="color:var(--accent);margin-top:4px">Show exercises (${wk.exercises.length})</summary>
-        ${wk.exercises.map(ex => `<div class="hist-ex"><b>${esc(ex.name)}</b> — ${ex.sets.map(s => `${w(s.kg)}×${s.reps}`).join(', ')}</div>`).join('')}
-        ${wk.notes ? `<div class="hist-ex muted">“${esc(wk.notes)}”</div>` : ''}
-      </details>
-      <div class="btn-row" style="margin-top:6px">
-        <button class="btn small" data-hist-repeat="${wk.id}" type="button">↻ Repeat</button>
-        <button class="btn ghost small" data-hist-del="${wk.id}" type="button">Delete</button>
+    const d = parseDate(wk.date);
+    const m = d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    const header = m !== month ? `<h3 class="month">${m}</h3>` : '';
+    month = m;
+    return `${header}<div class="hist-item">
+      <div class="hist-row">
+        <div class="date-badge">
+          <span class="dow">${d.toLocaleDateString(undefined, { weekday: 'short' })}</span>
+          <span class="day">${d.getDate()}</span>
+          <span class="mon">${d.toLocaleDateString(undefined, { month: 'short' })}</span>
+        </div>
+        <div class="hist-main">
+          <strong>${esc(wk.name)}</strong>
+          <div class="muted small">${[dur, `${workoutSets(wk)} ${workoutSets(wk) === 1 ? 'set' : 'sets'}`, `${num(toDisp(workoutVolume(wk)), 0)} ${unit()} volume`, bw ? `body weight ${wu(bw.kg)}` : ''].filter(Boolean).join(' · ')}</div>
+          <details>
+            <summary class="small" style="color:var(--accent);margin-top:4px">Show exercises (${wk.exercises.length})</summary>
+            ${wk.exercises.map(ex => `<div class="hist-ex"><b>${esc(ex.name)}</b> — ${ex.sets.map(s => `${w(s.kg)}×${s.reps}`).join(', ')}</div>`).join('')}
+            ${wk.notes ? `<div class="hist-ex muted">“${esc(wk.notes)}”</div>` : ''}
+          </details>
+          <div class="btn-row" style="margin-top:6px;align-items:center">
+            <button class="btn small" data-hist-repeat="${wk.id}" type="button">↻ Repeat</button>
+            <button class="btn ghost small" data-hist-del="${wk.id}" type="button">Delete</button>
+            <label class="date-edit small">Change date <input type="date" data-hist-date="${wk.id}" value="${wk.date}" max="${todayStr()}"></label>
+          </div>
+        </div>
       </div>
     </div>`;
   }).join('');
 
+  $$('[data-hist-date]', el).forEach(inp => inp.onchange = () => {
+    const wk = state.workouts.find(x => x.id === inp.dataset.histDate);
+    if (!inp.value || inp.value > todayStr()) { inp.value = wk.date; toast('Pick today or an earlier date'); return; }
+    if (inp.value !== wk.date) {
+      wk.date = inp.value;
+      if (!wk.startedAt || dateStr(new Date(wk.startedAt)) !== wk.date) wk.finishedAt = null;
+      save(); renderAll(); toast(`Moved to ${fmtDate(wk.date)}`);
+    }
+  });
   $$('[data-hist-repeat]', el).forEach(b => b.onclick = () => {
     if (state.draft && !confirm('You already have a workout in progress. Replace it?')) return;
     newDraft(state.workouts.find(x => x.id === b.dataset.histRepeat));
@@ -692,7 +723,6 @@ function niceTicks(lo, hi, count) {
 function renderSettings() {
   $('#sUnit').value = unit();
   $('#sGoal').value = state.settings.goalKg ? inputVal(state.settings.goalKg) : '';
-  $('#sWeekly').value = state.settings.weeklyTarget;
 }
 
 function download(filename, content, type) {
@@ -749,7 +779,6 @@ $('#settingsForm').onsubmit = e => {
   const goalKg = goalRaw === '' ? null : fromDisp(parseFloat(goalRaw));
   state.settings.goalKg = goalKg;
   state.settings.unit = $('#sUnit').value;
-  state.settings.weeklyTarget = Math.max(1, parseInt($('#sWeekly').value, 10) || 4);
   save();
   toast('Settings saved');
   renderAll();
