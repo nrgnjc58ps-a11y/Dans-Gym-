@@ -188,9 +188,10 @@ function normalizeName(name) {
   return match || trimmed;
 }
 
-// Last completed session containing this exercise
-function lastSessionFor(name) {
+// Last completed session containing this exercise, before the given workout
+function lastSessionFor(name, current) {
   for (const wk of sortedWorkouts()) {
+    if (current && (wk.id === current.id || (current.date && wk.date > current.date))) continue;
     const ex = wk.exercises.find(e => e.name.toLowerCase() === name.toLowerCase());
     if (ex && ex.sets.length) return { date: wk.date, sets: ex.sets };
   }
@@ -237,6 +238,42 @@ function finishDraft() {
     exercises
   });
   state.draft = null;
+  save();
+  return true;
+}
+
+// Workout currently being edited from History (a copy; not saved until "Save changes")
+let editing = null;
+
+function startEdit(id) {
+  const wk = state.workouts.find(x => x.id === id);
+  if (!wk) return;
+  editing = {
+    id: wk.id,
+    date: wk.date,
+    name: wk.name,
+    notes: wk.notes || '',
+    exercises: wk.exercises.map(ex => ({ name: ex.name, sets: ex.sets.map(s => ({ kg: s.kg, reps: s.reps, done: true })) }))
+  };
+}
+
+function saveEdit() {
+  const d = editing;
+  const exercises = d.exercises
+    .map(ex => ({ name: ex.name, sets: ex.sets.filter(s => s.reps > 0).map(s => ({ kg: s.kg || 0, reps: s.reps })) }))
+    .filter(ex => ex.sets.length);
+  if (!exercises.length) {
+    toast('A workout needs at least one set with reps. Use Delete to remove it.');
+    return false;
+  }
+  const wk = state.workouts.find(x => x.id === d.id);
+  if (!wk) { editing = null; return false; }
+  if (d.date !== wk.date && (!wk.startedAt || dateStr(new Date(wk.startedAt)) !== d.date)) wk.finishedAt = null;
+  wk.date = d.date;
+  wk.name = d.name.trim() || 'Workout';
+  wk.notes = d.notes.trim();
+  wk.exercises = exercises;
+  editing = null;
   save();
   return true;
 }
@@ -356,56 +393,71 @@ function renderWorkout() {
   tick();
   timerInterval = setInterval(tick, 15000);
 
-  body.innerHTML = `
+  workoutEditor(body, d, {
+    persist: save,
+    rerender: renderWorkout,
+    saveLabel: '✓ Finish workout',
+    cancelLabel: 'Discard',
+    onSave: () => {
+      const undone = d.exercises.some(ex => ex.sets.some(s => s.reps > 0 && !s.done));
+      if (undone && !confirm('Some sets aren\'t ticked as done. Save all sets with reps entered anyway?')) return;
+      if (finishDraft()) { toast('Workout saved 💪'); renderAll(); }
+    },
+    onCancel: () => {
+      if (!confirm('Discard this workout? Nothing will be saved.')) return;
+      state.draft = null; save(); renderToday();
+    }
+  });
+}
+
+// Renders an editable workout `d` into `root`. Edits are made to `d` directly.
+function workoutEditor(root, d, { persist, rerender, saveLabel, cancelLabel, onSave, onCancel }) {
+  root.innerHTML = `
     <div class="row-form" style="margin-bottom:12px">
-      <label>Date<input type="date" id="draftDate" value="${esc(d.date || todayStr())}" max="${todayStr()}" required></label>
-      <label class="grow">Name<input type="text" id="draftName" value="${esc(d.name)}"></label>
+      <label>Date<input type="date" data-k="date" value="${esc(d.date || todayStr())}" max="${todayStr()}" required></label>
+      <label class="grow">Name<input type="text" data-k="name" value="${esc(d.name)}"></label>
     </div>
-    <div id="exerciseBlocks">
-      ${d.exercises.map((ex, i) => exerciseBlock(ex, i)).join('')}
+    <div data-k="blocks">
+      ${d.exercises.map((ex, i) => exerciseBlock(ex, i, d)).join('')}
     </div>
-    <form class="add-ex" id="addExForm">
-      <input type="text" id="newExName" list="exerciseList" placeholder="Add exercise (e.g. Bench Press)" autocomplete="off">
+    <form class="add-ex" data-k="addEx">
+      <input type="text" data-k="newEx" list="exerciseList" placeholder="Add exercise (e.g. Bench Press)" autocomplete="off">
       <button class="btn" type="submit">Add</button>
     </form>
-    <label>Notes<textarea id="draftNotes" placeholder="How did it feel?">${esc(d.notes)}</textarea></label>
+    <label>Notes<textarea data-k="notes" placeholder="How did it feel?">${esc(d.notes)}</textarea></label>
     <div class="btn-row" style="margin-top:14px">
-      <button class="btn primary" id="finishBtn" type="button" style="flex:1">✓ Finish workout</button>
-      <button class="btn danger" id="discardBtn" type="button">Discard</button>
+      <button class="btn primary" data-k="save" type="button" style="flex:1">${saveLabel}</button>
+      <button class="btn danger" data-k="cancel" type="button">${cancelLabel}</button>
     </div>`;
 
-  $('#draftName').oninput = e => { d.name = e.target.value; save(); };
-  $('#draftDate').onchange = e => {
+  const k = name => $(`[data-k="${name}"]`, root);
+  k('name').oninput = e => { d.name = e.target.value; persist(); };
+  k('date').onchange = e => {
     const v = e.target.value;
     if (!v || v > todayStr()) { e.target.value = d.date || todayStr(); toast('Pick today or an earlier date'); return; }
-    d.date = v; save();
+    d.date = v; persist();
+    rerender(); // "last time" hints depend on the date
   };
-  $('#draftNotes').oninput = e => { d.notes = e.target.value; save(); };
-  $('#addExForm').onsubmit = e => {
+  k('notes').oninput = e => { d.notes = e.target.value; persist(); };
+  k('addEx').onsubmit = e => {
     e.preventDefault();
-    const name = $('#newExName').value;
+    const name = k('newEx').value;
     if (!name.trim()) return;
     const n = normalizeName(name);
-    const last = lastSessionFor(n);
+    const last = lastSessionFor(n, d);
     const first = last ? last.sets[0] : null;
     d.exercises.push({ name: n, sets: [{ kg: first ? first.kg : null, reps: first ? first.reps : null, done: false }] });
-    save();
-    renderWorkout();
+    persist();
+    rerender();
     $('#exerciseList').innerHTML = allExerciseNames().map(x => `<option value="${esc(x)}">`).join('');
-    $('#newExName').focus();
+    const again = root.querySelector('[data-k="newEx"]');
+    if (again) again.focus();
   };
-  $('#finishBtn').onclick = () => {
-    const undone = d.exercises.some(ex => ex.sets.some(s => s.reps > 0 && !s.done));
-    if (undone && !confirm('Some sets aren\'t ticked as done. Save all sets with reps entered anyway?')) return;
-    if (finishDraft()) { toast('Workout saved 💪'); renderAll(); }
-  };
-  $('#discardBtn').onclick = () => {
-    if (!confirm('Discard this workout? Nothing will be saved.')) return;
-    state.draft = null; save(); renderToday();
-  };
+  k('save').onclick = onSave;
+  k('cancel').onclick = onCancel;
 
   // Delegated handlers for sets
-  const blocks = $('#exerciseBlocks');
+  const blocks = k('blocks');
   blocks.oninput = e => {
     const t = e.target;
     const ex = d.exercises[+t.dataset.ex];
@@ -413,7 +465,7 @@ function renderWorkout() {
     const set = ex.sets[+t.dataset.set];
     if (t.dataset.field === 'kg') set.kg = t.value === '' ? null : fromDisp(parseFloat(t.value));
     if (t.dataset.field === 'reps') set.reps = t.value === '' ? null : parseInt(t.value, 10);
-    save();
+    persist();
   };
   blocks.onchange = e => {
     const t = e.target;
@@ -421,7 +473,7 @@ function renderWorkout() {
     const set = d.exercises[+t.dataset.ex].sets[+t.dataset.set];
     set.done = t.checked;
     t.closest('tr').classList.toggle('done', t.checked);
-    save();
+    persist();
   };
   blocks.onclick = e => {
     const b = e.target.closest('button');
@@ -430,7 +482,7 @@ function renderWorkout() {
     const ex = d.exercises[i];
     if (b.dataset.act === 'addSet') {
       const prev = ex.sets[ex.sets.length - 1];
-      const last = lastSessionFor(ex.name);
+      const last = lastSessionFor(ex.name, d);
       const ref = prev || (last && last.sets[ex.sets.length]);
       ex.sets.push({ kg: ref ? ref.kg : null, reps: ref ? ref.reps : null, done: false });
     } else if (b.dataset.act === 'delSet') {
@@ -441,16 +493,16 @@ function renderWorkout() {
     } else if (b.dataset.act === 'up' && i > 0) {
       [d.exercises[i - 1], d.exercises[i]] = [d.exercises[i], d.exercises[i - 1]];
     } else return;
-    save();
-    renderWorkout();
+    persist();
+    rerender();
   };
 }
 
-function exerciseBlock(ex, i) {
-  const last = lastSessionFor(ex.name);
+function exerciseBlock(ex, i, d) {
+  const last = lastSessionFor(ex.name, d);
   const hint = last
-    ? `Last time (${fmtDate(last.date, { month: 'short', day: 'numeric' })}): ${last.sets.map(s => `${w(s.kg)}×${s.reps}`).join(', ')}`
-    : 'First time logging this exercise';
+    ? `Previous (${fmtDate(last.date, { month: 'short', day: 'numeric' })}): ${last.sets.map(s => `${w(s.kg)}×${s.reps}`).join(', ')}`
+    : 'No earlier sessions of this exercise';
   return `
     <div class="exercise">
       <div class="exercise-head">
@@ -567,6 +619,19 @@ function statBox(label, value, sub, trend) {
 function renderHistory() {
   const list = sortedWorkouts();
   const el = $('#historyList');
+  if (editing && !state.workouts.some(x => x.id === editing.id)) editing = null;
+  $('#historyTitle').textContent = editing ? 'Edit workout' : 'Workout history';
+  if (editing) {
+    workoutEditor(el, editing, {
+      persist: () => {},
+      rerender: renderHistory,
+      saveLabel: '✓ Save changes',
+      cancelLabel: 'Cancel',
+      onSave: () => { if (saveEdit()) { toast('Workout updated'); renderAll(); window.scrollTo(0, 0); } },
+      onCancel: () => { editing = null; renderHistory(); window.scrollTo(0, 0); }
+    });
+    return;
+  }
   if (!list.length) { el.innerHTML = '<div class="empty">No workouts yet. Start one from the Today tab.</div>'; return; }
   let month = '';
   el.innerHTML = list.map(wk => {
@@ -592,23 +657,19 @@ function renderHistory() {
             ${wk.notes ? `<div class="hist-ex muted">“${esc(wk.notes)}”</div>` : ''}
           </details>
           <div class="btn-row" style="margin-top:6px;align-items:center">
+            <button class="btn small" data-hist-edit="${wk.id}" type="button">✎ Edit</button>
             <button class="btn small" data-hist-repeat="${wk.id}" type="button">↻ Repeat</button>
             <button class="btn ghost small" data-hist-del="${wk.id}" type="button">Delete</button>
-            <label class="date-edit small">Change date <input type="date" data-hist-date="${wk.id}" value="${wk.date}" max="${todayStr()}"></label>
           </div>
         </div>
       </div>
     </div>`;
   }).join('');
 
-  $$('[data-hist-date]', el).forEach(inp => inp.onchange = () => {
-    const wk = state.workouts.find(x => x.id === inp.dataset.histDate);
-    if (!inp.value || inp.value > todayStr()) { inp.value = wk.date; toast('Pick today or an earlier date'); return; }
-    if (inp.value !== wk.date) {
-      wk.date = inp.value;
-      if (!wk.startedAt || dateStr(new Date(wk.startedAt)) !== wk.date) wk.finishedAt = null;
-      save(); renderAll(); toast(`Moved to ${fmtDate(wk.date)}`);
-    }
+  $$('[data-hist-edit]', el).forEach(b => b.onclick = () => {
+    startEdit(b.dataset.histEdit);
+    renderHistory();
+    window.scrollTo(0, 0);
   });
   $$('[data-hist-repeat]', el).forEach(b => b.onclick = () => {
     if (state.draft && !confirm('You already have a workout in progress. Replace it?')) return;
@@ -741,6 +802,7 @@ function showView(name) {
   $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
   $$('.tabbar button').forEach(b => b.classList.toggle('on', b.dataset.view === name));
   window.scrollTo(0, 0);
+  if (name !== 'history' && editing) { editing = null; renderHistory(); }
   if (name === 'weight') renderWeight();
   if (name === 'progress') renderProgress();
   try { sessionStorage.setItem('dansgym.view', name); } catch (e) { /* ignore */ }
