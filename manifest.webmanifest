@@ -1,0 +1,13 @@
+{
+  "name": "Dan's Gym",
+  "short_name": "Dan's Gym",
+  "description": "Gym workout logger with daily weigh-ins",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

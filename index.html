@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Dan's Gym</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Dan's Gym</h1>
+    <span id="todayLabel" class="muted"></span>
+  </header>
+
+  <main>
+    <!-- TODAY -->
+    <section id="view-today" class="view active">
+      <div class="card weigh-quick">
+        <div class="card-head">
+          <h2>Daily weigh-in</h2>
+          <span id="weighStreak" class="pill"></span>
+        </div>
+        <div id="weighQuickBody"></div>
+      </div>
+
+      <div class="stats-row" id="weekStats"></div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2 id="workoutTitle">Workout</h2>
+          <span id="workoutTimer" class="pill"></span>
+        </div>
+        <div id="workoutBody"></div>
+      </div>
+    </section>
+
+    <!-- WEIGHT -->
+    <section id="view-weight" class="view">
+      <div class="card">
+        <div class="card-head"><h2>Log weight</h2></div>
+        <form id="weighForm" class="row-form">
+          <label>Date<input type="date" id="wDate" required></label>
+          <label><span>Weight (<span class="unitLabel"></span>)</span><input type="number" id="wValue" step="0.1" min="20" max="700" inputmode="decimal" required></label>
+          <label class="grow">Note<input type="text" id="wNote" placeholder="optional"></label>
+          <button class="btn primary" type="submit">Save</button>
+        </form>
+      </div>
+
+      <div class="stats-row" id="weightStats"></div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Trend</h2>
+          <div class="seg" id="weightRange">
+            <button data-range="30" class="on">30d</button>
+            <button data-range="90">90d</button>
+            <button data-range="365">1y</button>
+            <button data-range="0">All</button>
+          </div>
+        </div>
+        <div id="weightChart" class="chart"></div>
+        <p class="legend"><span class="sw sw-a"></span>Daily weight <span class="sw sw-b"></span>7-day average <span class="sw sw-goal"></span>Goal</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Entries</h2></div>
+        <div id="weightList"></div>
+      </div>
+    </section>
+
+    <!-- HISTORY -->
+    <section id="view-history" class="view">
+      <div class="card">
+        <div class="card-head"><h2>Workout history</h2></div>
+        <div id="historyList"></div>
+      </div>
+    </section>
+
+    <!-- PROGRESS -->
+    <section id="view-progress" class="view">
+      <div class="card">
+        <div class="card-head">
+          <h2>Exercise progress</h2>
+          <select id="progressExercise"></select>
+        </div>
+        <div id="progressChart" class="chart"></div>
+        <p class="legend"><span class="sw sw-a"></span>Estimated 1-rep max <span class="sw sw-b"></span>Heaviest set</p>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Personal records</h2></div>
+        <div id="prTable"></div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="view-settings" class="view">
+      <div class="card">
+        <div class="card-head"><h2>Settings</h2></div>
+        <form id="settingsForm" class="stack">
+          <label>Units
+            <select id="sUnit">
+              <option value="kg">Kilograms (kg)</option>
+              <option value="lb">Pounds (lb)</option>
+            </select>
+          </label>
+          <label><span>Goal body weight (<span class="unitLabel"></span>)</span>
+            <input type="number" id="sGoal" step="0.1" inputmode="decimal" placeholder="optional">
+          </label>
+          <label>Weekly workout target
+            <input type="number" id="sWeekly" min="1" max="14" step="1" inputmode="numeric">
+          </label>
+          <button class="btn primary" type="submit">Save settings</button>
+        </form>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Backup</h2></div>
+        <p class="muted">Your data is stored only on this device, in this browser. Export a backup now and then, especially before clearing browser data or switching phones.</p>
+        <div class="btn-row">
+          <button class="btn" id="exportBtn" type="button">Export backup (.json)</button>
+          <label class="btn">Import backup<input type="file" id="importFile" accept="application/json,.json" hidden></label>
+          <button class="btn" id="csvBtn" type="button">Export weigh-ins (.csv)</button>
+        </div>
+      </div>
+      <div class="card danger-zone">
+        <div class="card-head"><h2>Danger zone</h2></div>
+        <button class="btn danger" id="wipeBtn" type="button">Delete all data</button>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabbar">
+    <button data-view="today" class="on"><span>🏋️</span>Today</button>
+    <button data-view="weight"><span>⚖️</span>Weight</button>
+    <button data-view="history"><span>📅</span>History</button>
+    <button data-view="progress"><span>📈</span>Progress</button>
+    <button data-view="settings"><span>⚙️</span>Settings</button>
+  </nav>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <datalist id="exerciseList"></datalist>
+  <script src="app.js"></script>
+</body>
+</html>
