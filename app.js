@@ -205,6 +205,7 @@ function newDraft(fromWorkout) {
     name: fromWorkout ? fromWorkout.name : defaultWorkoutName(),
     startedAt: new Date().toISOString(),
     notes: '',
+    copiedFrom: fromWorkout ? { name: fromWorkout.name, date: fromWorkout.date } : null,
     exercises: fromWorkout
       ? fromWorkout.exercises.map(ex => ({ name: ex.name, sets: ex.sets.map(s => ({ kg: s.kg, reps: s.reps, done: false })) }))
       : []
@@ -255,6 +256,19 @@ function startEdit(id) {
     notes: wk.notes || '',
     exercises: wk.exercises.map(ex => ({ name: ex.name, sets: ex.sets.map(s => ({ kg: s.kg, reps: s.reps, done: true })) }))
   };
+}
+
+function openEdit(id) {
+  startEdit(id);
+  showView('history');
+  renderHistory();
+}
+
+// Same date and identical sets as an already-saved workout?
+function findDuplicate(d) {
+  const sig = exs => JSON.stringify(exs.map(ex => [ex.name, ex.sets.filter(s => s.reps > 0).map(s => [Math.round((s.kg || 0) * 100), s.reps])]).filter(x => x[1].length));
+  const mine = sig(d.exercises);
+  return state.workouts.find(wk => wk.date === (d.date || todayStr()) && sig(wk.exercises) === mine);
 }
 
 function saveEdit() {
@@ -358,7 +372,7 @@ function renderWeekStats() {
       <div class="value">${thisWeek.length}</div>
       <div class="sub">${thisWeek.length === 1 ? 'workout' : 'workouts'} since Monday</div></div>
     <div class="stat"><div class="label">Weekly volume</div>
-      <div class="value">${num(toDisp(vol), 0)}</div><div class="sub">${unit()} · ${sets} sets</div></div>
+      <div class="value">${num(toDisp(vol), 0)}</div><div class="sub">${unit()} · ${sets} ${sets === 1 ? 'set' : 'sets'}</div></div>
     <div class="stat"><div class="label">Last workout</div>
       <div class="value">${since == null ? '–' : since === 0 ? 'Today' : since === 1 ? '1 day' : since + ' days'}</div>
       <div class="sub">${last ? esc(last.name) : 'none yet'}</div></div>`;
@@ -373,16 +387,27 @@ function renderWorkout() {
   if (!d) {
     $('#workoutTitle').textContent = 'Workout';
     $('#workoutTimer').textContent = '';
+    const today = todayStr();
+    const doneToday = sortedWorkouts().filter(x => x.date === today);
     const recent = sortedWorkouts();
     const seen = new Set();
     const templates = recent.filter(x => !seen.has(x.name) && seen.add(x.name)).slice(0, 4);
     body.innerHTML = `
-      <button class="btn primary block" id="startEmpty" type="button">+ Start empty workout</button>
-      ${templates.length ? `<p class="muted small" style="margin:14px 0 6px">Or repeat a recent workout:</p>
-        <div class="btn-row">${templates.map(t => `<button class="btn small" data-repeat="${t.id}" type="button">↻ ${esc(t.name)}</button>`).join('')}</div>` : ''}`;
+      ${doneToday.map(wk => `
+        <div class="done-today">
+          <div><strong>✓ ${esc(wk.name)}</strong>
+            <div class="muted small">Logged today · ${workoutSets(wk)} ${workoutSets(wk) === 1 ? 'set' : 'sets'}</div></div>
+          <button class="btn small" data-edit-today="${wk.id}" type="button">✎ Edit</button>
+        </div>`).join('')}
+      <button class="btn primary block" id="startEmpty" type="button">+ Start ${doneToday.length ? 'another' : 'a'} workout</button>
+      ${templates.length ? `<p class="muted small" style="margin:14px 0 6px">Or start a <b>new</b> workout copied from a past one:</p>
+        <div class="btn-row">${templates.map(t => `<button class="btn small" data-repeat="${t.id}" type="button">+ New ${esc(t.name)}</button>`).join('')}</div>` : ''}`;
     $('#startEmpty').onclick = () => { newDraft(); renderToday(); };
+    $$('[data-edit-today]', body).forEach(b => b.onclick = () => openEdit(b.dataset.editToday));
     $$('[data-repeat]', body).forEach(b => b.onclick = () => {
-      newDraft(state.workouts.find(x => x.id === b.dataset.repeat));
+      const src = state.workouts.find(x => x.id === b.dataset.repeat);
+      if (src.date === today && !confirm(`"${src.name}" is already logged today.\n\nThis starts a SECOND, separate workout. To change the one you logged, tap Edit instead.\n\nStart a new workout anyway?`)) return;
+      newDraft(src);
       renderToday();
     });
     return;
@@ -394,11 +419,14 @@ function renderWorkout() {
   timerInterval = setInterval(tick, 15000);
 
   workoutEditor(body, d, {
+    banner: d.copiedFrom ? `New workout copied from <b>${esc(d.copiedFrom.name)}</b> (${fmtDate(d.copiedFrom.date)}). Finishing saves it as a separate workout — to change the original, use Edit in History.` : '',
     persist: save,
     rerender: renderWorkout,
     saveLabel: '✓ Finish workout',
     cancelLabel: 'Discard',
     onSave: () => {
+      const dup = findDuplicate(d);
+      if (dup && !confirm(`This is identical to "${dup.name}" already saved for ${fmtDate(dup.date)}.\n\nSave it as a second workout anyway? (Cancel, then Discard, if it's a copy you don't need.)`)) return;
       const undone = d.exercises.some(ex => ex.sets.some(s => s.reps > 0 && !s.done));
       if (undone && !confirm('Some sets aren\'t ticked as done. Save all sets with reps entered anyway?')) return;
       if (finishDraft()) { toast('Workout saved 💪'); renderAll(); }
@@ -411,8 +439,9 @@ function renderWorkout() {
 }
 
 // Renders an editable workout `d` into `root`. Edits are made to `d` directly.
-function workoutEditor(root, d, { persist, rerender, saveLabel, cancelLabel, onSave, onCancel }) {
+function workoutEditor(root, d, { banner = '', persist, rerender, saveLabel, cancelLabel, onSave, onCancel }) {
   root.innerHTML = `
+    ${banner ? `<p class="banner">${banner}</p>` : ''}
     <div class="row-form" style="margin-bottom:12px">
       <label>Date<input type="date" data-k="date" value="${esc(d.date || todayStr())}" max="${todayStr()}" required></label>
       <label class="grow">Name<input type="text" data-k="name" value="${esc(d.name)}"></label>
@@ -658,7 +687,7 @@ function renderHistory() {
           </details>
           <div class="btn-row" style="margin-top:6px;align-items:center">
             <button class="btn small" data-hist-edit="${wk.id}" type="button">✎ Edit</button>
-            <button class="btn small" data-hist-repeat="${wk.id}" type="button">↻ Repeat</button>
+            <button class="btn small" data-hist-repeat="${wk.id}" type="button">+ Do again</button>
             <button class="btn ghost small" data-hist-del="${wk.id}" type="button">Delete</button>
           </div>
         </div>
@@ -673,6 +702,7 @@ function renderHistory() {
   });
   $$('[data-hist-repeat]', el).forEach(b => b.onclick = () => {
     if (state.draft && !confirm('You already have a workout in progress. Replace it?')) return;
+    if (!state.draft && !confirm('Start a NEW workout today using this one as a template?\n\n(To change this workout itself, use Edit.)')) return;
     newDraft(state.workouts.find(x => x.id === b.dataset.histRepeat));
     showView('today');
     renderToday();

@@ -219,3 +219,7 @@ table.pr th { color: var(--muted); font-weight: 600; font-size: .78rem; border-t
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
 .danger-zone { border-color: color-mix(in srgb, var(--bad) 40%, var(--line)); }
+
+.banner { background: var(--accent-soft); color: var(--text); border-radius: 10px; padding: 10px 12px; font-size: .85rem; margin: 0 0 12px; }
+.done-today { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 12px; margin-bottom: 10px;
+  border-radius: 10px; background: color-mix(in srgb, var(--good) 12%, var(--card)); border: 1px solid color-mix(in srgb, var(--good) 35%, var(--line)); }
